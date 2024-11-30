@@ -1,10 +1,21 @@
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer, LspService, Server};
+use std::collections::HashMap;
 
-#[derive(Debug)]
+enum Value {
+    Str(String),
+    Sym(String)
+}
+
+struct Module {
+    name: String,
+    values: HashMap<String, Value>
+}
+
 struct Backend {
     client: Client,
+    // module: Module
 }
 
 #[tower_lsp::async_trait]
@@ -25,6 +36,14 @@ impl LanguageServer for Backend {
             ..Default::default()
         })
     }
+
+    async fn did_open(&self, params: DidOpenTextDocumentParams) {
+        self.client.log_message(MessageType::INFO, format!("did open '{}'", params.text_document.uri.as_str())).await;
+    } 
+
+    async fn did_change(&self, params: DidChangeTextDocumentParams) {
+        self.client.log_message(MessageType::INFO, format!("did change'{}'", params.text_document.uri.as_str())).await;
+    } 
 
     async fn initialized(&self, _: InitializedParams) {
         self.client.show_message(MessageType::INFO, "Saffron lsp started!").await;
