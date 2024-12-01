@@ -2,6 +2,9 @@ use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer, LspService, Server};
 use std::collections::HashMap;
+use std::cell::Cell;
+use std::sync::Mutex;
+use std::sync::Arc;
 
 enum Value {
     Str(String),
@@ -9,13 +12,13 @@ enum Value {
 }
 
 struct Module {
-    name: String,
-    values: HashMap<String, Value>
+    values: HashMap<String, Value>,
+    text: String
 }
 
 struct Backend {
     client: Client,
-    // module: Module
+    modules: Arc<Mutex<HashMap<String, Module>>>
 }
 
 #[tower_lsp::async_trait]
@@ -39,10 +42,22 @@ impl LanguageServer for Backend {
 
     async fn did_open(&self, params: DidOpenTextDocumentParams) {
         self.client.log_message(MessageType::INFO, format!("did open '{}'", params.text_document.uri.as_str())).await;
+        let path = params.text_document.uri.as_str();
+        let values = HashMap::new();
+        let text = params.text_document.text;
+        let module = Module{values, text};
+        if let Ok(mut modules) = self.modules.lock() {
+            modules.insert(path.to_string(), module);
+        }
     } 
 
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
         self.client.log_message(MessageType::INFO, format!("did change'{}'", params.text_document.uri.as_str())).await;
+        for change in params.content_changes {
+            if let (Some(range), Some(range_length)) = { (change.range, change.range_length) } { 
+                self.client.log_message(MessageType::INFO, format!("change '{}'", change.text)).await;
+            }
+        }
     } 
 
     async fn initialized(&self, _: InitializedParams) {
@@ -88,6 +103,7 @@ async fn main() {
     let stdin = tokio::io::stdin();
     let stdout = tokio::io::stdout();
 
-    let (service, socket) = LspService::new(|client| Backend { client });
+    let modules = Arc::new(Mutex::new(HashMap::new()));
+    let (service, socket) = LspService::new(|client| Backend { client: client, modules: modules });
     Server::new(stdin, stdout, socket).serve(service).await;
 }
